@@ -31,12 +31,12 @@ class Grid:
 
             # in a case when the default file doesn't exist, try to create it
             self.__map = {
-                "Space": ("Sky",        ""),
-                "1":     ("One bird",   "1"),
-                "2":     ("Two birds",  "2"),
-                "3":     ("Three birds","3"),
-                "4":     ("Four birds", "4"),
-                "5":     ("Five birds", "5"),
+                " ": "Empty",
+                "one": "One bird",
+                "two": "Two birds",
+                "three": "Three birds",
+                "four": "Four birds",
+                "five": "Five birds",
             }
             self.__size = (16, 8)
             self.__data = [['' for x in range(self.__size[0])] for y in range(self.__size[1])]
@@ -47,10 +47,10 @@ class Grid:
         return self.__map.keys()
 
     def name(self, key):
-        return self.__map[key][0]
+        return self.__map[key]
 
-    def shortcut(self, key):
-        return self.__map[key][1]
+    def match_key(self, key):
+        return [k for k in self.keys() if (key == k[:len(key)])]
 
     def size(self):   return self.__size[:]
     def width(self):  return self.__size[0]
@@ -91,7 +91,7 @@ class Grid:
             for x in range(w):
                 k = self.data(x, y)
                 if not k:
-                    k = 'Space'
+                    k = ' '
 
                 if k in hist:
                     hist[k] += 1
@@ -126,18 +126,17 @@ class GridSetupDialog(QDialog):
         self.gridWidth = QLineEdit()
         self.gridHeight = QLineEdit()
 
-        self.names = [ "Space", "1", "2", "3", "4", "5", "6", "7", "8", "9" ]
-        self.ll = [] # labels
         self.sl = [] # shortcuts
         self.dl = [] # descriptions
         for i in range(10):
-            self.ll.append(QLabel(self.names[i]))
-
             sl = QLineEdit()
-            sl.setFixedWidth(40)
+            sl.setFixedWidth(100)
             self.sl.append(sl)
 
             self.dl.append(QLineEdit())
+
+        self.sl[0].setStyleSheet("color: grey;")
+        self.dl[0].setStyleSheet("color: grey;")
 
         self.saveButton = QPushButton("Save")
         self.loadButton = QPushButton("Load")
@@ -158,9 +157,8 @@ class GridSetupDialog(QDialog):
         L.addWidget(self.gridHeight,    1, 1)
 
         for i in range(10):
-            L.addWidget(self.ll[i], 2 + i, 0)
-            L.addWidget(self.sl[i], 2 + i, 1)
-            L.addWidget(self.dl[i], 2 + i, 2)
+            L.addWidget(self.sl[i], 2 + i, 0)
+            L.addWidget(self.dl[i], 2 + i, 1)
 
         L.addWidget(self.saveButton, 13, 0)
         L.addWidget(self.loadButton, 13, 1)
@@ -183,13 +181,17 @@ class GridSetupDialog(QDialog):
         grid = Grid()
 
         for i in range(10):
-            sl = self.sl[i].text()
-            dl = self.dl[i].text()
+            short = self.sl[i].text()
+            full = self.dl[i].text()
 
-            if not dl:
+            # replace <space> with a real space character
+            if i == 0:
+                short = ' '
+
+            if not full or not short:
                 break
 
-            grid.set_legend_value(self.names[i], (dl, sl))
+            grid.set_legend_value(short, full)
 
         grid.set_size(int(self.gridWidth.text()), int(self.gridHeight.text()))
 
@@ -210,9 +212,14 @@ class GridSetupDialog(QDialog):
 
         i = 0
         for k in grid.keys():
-            self.sl[i].setText(grid.shortcut(k))
+            self.sl[i].setText(k)
             self.dl[i].setText(grid.name(k))
             i += 1
+
+        # some special conditions: the first key is always <space>
+        self.sl[0].setText("<Space>")
+        self.sl[0].setReadOnly(True)
+        self.dl[0].setReadOnly(True)
 
     def load(self, filename = None):
 
@@ -230,8 +237,23 @@ class GridSetupDialog(QDialog):
 
 class GridWidget(QLabel):
 
-    def __init__(self):
+    __special_keys = (
+             Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down,
+             Qt.Key_H, Qt.Key_L, Qt.Key_K, Qt.Key_J
+        )
+
+    __shortcut_keys = "0123456789qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
+
+    def __init__(self, parent):
         super(GridWidget, self).__init__()
+
+        self.parent = parent
+
+        self.__shortcut_timer = QTimer()
+        self.__shortcut_timer.setSingleShot(True)
+        self.__shortcut_timer.timeout.connect(self.__timer_shot)
+
+        self.__shortcut_reset()
 
         self.grid = None
 
@@ -243,12 +265,8 @@ class GridWidget(QLabel):
         self.current = (0, 0)
         self.update()
 
-    def keyPress(self, key):
+    def keyPressSpecial(self, key):
 
-        if not self.grid:
-            return
-
-        # move operations
         if key == Qt.Key_Left or key == Qt.Key_H:
             self.move_left()
         elif key == Qt.Key_Right or key == Qt.Key_L:
@@ -258,13 +276,41 @@ class GridWidget(QLabel):
         elif key == Qt.Key_Down or key == Qt.Key_J:
             self.move_down()
 
-        # set empty label
-        elif key == Qt.Key_Space:
-            self.setLabel("Space")
+    def __timer_shot(self):
+        self.__shortcut_reset()
 
-        # map key to character and save it
-        elif key > 0 and key < 0xff and (chr(key | 0x20) in self.grid.keys()):
-            self.setLabel('%c' % (key | 0x20))
+    def __shortcut_reset(self):
+        self.__shortcut = ""
+        self.__shortcut_timer.stop()
+        self.parent.setStatusMessage(self.__shortcut)
+
+    def keyPressShortcut(self, key):
+
+        self.__shortcut += chr(key | 0x20)
+        print(self.__shortcut)
+        self.parent.setStatusMessage(self.__shortcut)
+
+        matched = self.grid.match_key(self.__shortcut)
+        if len(matched) == 1:
+            self.setLabel(matched[0])
+            self.__shortcut_reset()
+        elif len(matched) > 1:
+            self.__shortcut_timer.start(1000)
+        else:
+            self.__shortcut_reset()
+
+    def keyPress(self, key):
+
+        if not self.grid:
+            return
+
+        # move operations
+        if key in GridWidget.__special_keys:
+            self.keyPressSpecial(key)
+        elif key == Qt.Key_Space:
+            self.setLabel(" ")
+        elif key > 0 and key < 255 and (chr(key) in GridWidget.__shortcut_keys):
+            self.keyPressShortcut(key)
 
     def move(self, offset):
         dx, dy = offset
@@ -312,7 +358,7 @@ class GridWidget(QLabel):
 
                         painter.save()
                         painter.setPen(QColor(0, 255, 0, 100))
-                        painter.drawText(rect, Qt.AlignCenter, "%s" % self.grid.shortcut(X))
+                        painter.drawText(rect, Qt.AlignCenter, "%s" % X)
                         painter.restore()
                 except:
                     print ("bad parameters", self.current, x, y)
@@ -372,11 +418,12 @@ class ImageMarker(QMainWindow):
     def __init__(self):
         super(ImageMarker, self).__init__()
         self.setWindowTitle(self.__name)
+
+        self.statusBar = QStatusBar()
         self.createCentralWidget()
         self.createActions()
         self.createToolBar()
         self.createMenus()
-        self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
 
         # debug
@@ -384,7 +431,6 @@ class ImageMarker(QMainWindow):
         self.action_zoom_fit.setEnabled(True)
         self.action_zoom_fit.setChecked(True)
         self.zoomFit()
-        self.statusBar.showMessage("Hi there")
 
     def keyPressEvent(self, e):
 
@@ -393,7 +439,8 @@ class ImageMarker(QMainWindow):
 
         self.gridWidget.keyPress(e.key())
 
-        self.statusBar.showMessage("Key %s pressed" % (str(e.key())))
+    def setStatusMessage(self, status):
+        self.statusBar.showMessage(status)
 
     def createCentralWidget(self):
         """
@@ -401,7 +448,7 @@ class ImageMarker(QMainWindow):
         we will pass all keypress events to it
         """
 
-        self.gridWidget = GridWidget()
+        self.gridWidget = GridWidget(self)
         self.gridWidget.setBackgroundRole(QPalette.Base)
         self.gridWidget.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.gridWidget.setScaledContents(True)

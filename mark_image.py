@@ -32,11 +32,16 @@ class Grid:
             # in a case when the default file doesn't exist, try to create it
             self.__map = {
                 " ": "Empty",
-                "one": "One bird",
-                "two": "Two birds",
-                "three": "Three birds",
-                "four": "Four birds",
-                "five": "Five birds",
+                "ff": "Fibrin fibers",
+                "fb": "Fibrin bundles",
+                "fs": "Fibrin sponge",
+                "rnorm": "RBC Normal",
+                "rint": "RBC Intermediate shaped",
+                "rpoly": "RBC Polyhedrocytes",
+                "rball": "RBC Balloons like",
+                "rech": "RBC Echinocytes",
+                "pl": "Platelets",
+                "mac": "Macrovesicles",
             }
             self.__size = (16, 8)
             self.__data = [['' for x in range(self.__size[0])] for y in range(self.__size[1])]
@@ -128,7 +133,7 @@ class GridSetupDialog(QDialog):
 
         self.sl = [] # shortcuts
         self.dl = [] # descriptions
-        for i in range(10):
+        for i in range(16):
             sl = QLineEdit()
             sl.setFixedWidth(100)
             self.sl.append(sl)
@@ -156,15 +161,15 @@ class GridSetupDialog(QDialog):
         L.addWidget(labelGridHeight,    1, 0)
         L.addWidget(self.gridHeight,    1, 1)
 
-        for i in range(10):
+        for i in range(16):
             L.addWidget(self.sl[i], 2 + i, 0)
             L.addWidget(self.dl[i], 2 + i, 1)
 
-        L.addWidget(self.saveButton, 13, 0)
-        L.addWidget(self.loadButton, 13, 1)
+        L.addWidget(self.saveButton, 17, 0)
+        L.addWidget(self.loadButton, 17, 1)
 
-        L.addWidget(self.buttonOk,     14, 0)
-        L.addWidget(self.buttonCancel, 14, 1)
+        L.addWidget(self.buttonOk,     18, 0)
+        L.addWidget(self.buttonCancel, 18, 1)
         self.setLayout(L)
 
         print("saved = %s" %(saved))
@@ -180,7 +185,7 @@ class GridSetupDialog(QDialog):
 
         grid = Grid()
 
-        for i in range(10):
+        for i in range(16):
             short = self.sl[i].text()
             full = self.dl[i].text()
 
@@ -264,6 +269,8 @@ class GridWidget(QLabel):
         w, h = self.grid.size()
         self.current = (0, 0)
         self.update()
+
+    def get_grid(self): return self.grid
 
     def keyPressSpecial(self, key):
 
@@ -532,6 +539,8 @@ class ImageMarker(QMainWindow):
 
         self.gridWidget.open(fileName)
 
+        self.updateGridToolTip(self.gridWidget.get_grid())
+
     def updateActions(self):
         self.action_zoom_in.setEnabled(not self.action_zoom_fit.isChecked())
         self.action_zoom_out.setEnabled(not self.action_zoom_fit.isChecked())
@@ -590,6 +599,20 @@ class ImageMarker(QMainWindow):
         if grid:
             self.gridWidget.set_grid(grid)
             grid.save(self.__last_grid)
+
+            self.updateGridToolTip(grid)
+
+    def updateGridToolTip(self, grid):
+
+        if grid:
+
+            tip = 'You can use the following shortcuts:\n\n'
+
+            for key in grid.keys():
+                keyd = key == ' ' and '<Space>' or key
+                tip += "%s:\t%s\n" % (keyd, grid.name(key))
+
+            self.action_setup_grid.setToolTip(tip.strip())
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
